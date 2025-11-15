@@ -44,11 +44,8 @@ out/
 *.tmp
 *.bak
 
-# Models
-models/*.pkl
-models/*.joblib
-models/*.bin
-models/*.model
+# Models (обученные модели НЕ храним)
+models/*.cbm         
 
 # Environment configuration
 .env

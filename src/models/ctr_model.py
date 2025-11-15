@@ -1,5 +1,3 @@
-# src/models/ctr_model.py
-
 import os
 from typing import List, Tuple
 
