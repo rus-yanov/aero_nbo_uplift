@@ -1,0 +1,25 @@
+# Core
+pandas==2.2.1
+numpy==1.26.4
+
+# ML
+scikit-learn==1.4.0
+catboost==1.2.3
+xgboost==2.0.3
+
+# Visualization
+matplotlib==3.8.3
+seaborn==0.13.2
+
+# Notebooks
+jupyter==1.0.0
+ipykernel==6.29.4
+
+# Metrics and utilities
+tqdm==4.66.2
+python-dotenv==1.0.1
+
+# Optional (uplift)
+# Можно отключить, если не хотите тянуть тяжелые зависимости
+econml==0.14.1
+causalml==0.15.1
