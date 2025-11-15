@@ -1,6 +1,3 @@
-# =======================================
-# Python
-# =======================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,8 +16,6 @@ dist/
 .eggs/
 pip-wheel-metadata/
 *.whl
-
-# Byte-compiled
 *.pyo
 *.pyd
 
@@ -29,84 +24,37 @@ pip-wheel-metadata/
 logs/
 debug.log
 
-# =======================================
 # Jupyter Notebook
-# =======================================
 .ipynb_checkpoints
 .profile
-*.nbconvert.ipynb
 
-# Ignore large notebook outputs (optional)
-# Uncomment if нужен "чистый" репозиторий без артефактов
-# *.ipynb
-# NOTE: Обычно ноутбуки храним, поэтому закомментировано
-
-# =======================================
 # PyCharm
-# =======================================
-# https://intellij-support.jetbrains.com/hc/en-us/articles/206544839
 .idea/
 *.iml
 out/
 *.ipr
 *.iws
 
-# =======================================
 # VS Code
-# =======================================
 .vscode/
 *.code-workspace
-
-# =======================================
-# OS files
-# =======================================
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Linux
-*~
-
-# =======================================
-# Data files (optional)
-# =======================================
-data/raw/*
-!data/raw/.keep
-
-data/processed/*
-!data/processed/.keep
-
-data/external/*
-!data/external/.keep
 
 # Remove temp datasets / models
 *.csv~
 *.tmp
 *.bak
 
-# =======================================
 # Models
-# =======================================
 models/*.pkl
 models/*.joblib
 models/*.bin
 models/*.model
 
-# =======================================
 # Environment configuration
-# =======================================
 .env
 *.env
 .env.*
 
-# =======================================
 # Jupyter extensions / cache
-# =======================================
 .jupyter/
 .ipython/
