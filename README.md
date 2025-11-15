@@ -1,128 +1,120 @@
-Aero NBO — Прототип 1 (ML + Uplift)
+<body>
 
-Overview
+  <h1>Aero NBO — Прототип 1 (ML + Uplift)</h1>
 
-Данный прототип реализует подход Next Best Offer (NBO) на основе классических ML-моделей и методологии uplift modeling.
-Цель — оценить, какое коммерческое предложение (оффер) создаст максимальный прирост вероятности отклика пользователя, по сравнению с ситуацией, когда оффер не показывается.
+  <p>
+    Этот прототип реализует классический подход к Next Best Offer (NBO) на основе моделей отклика 
+    и uplift-моделирования. Основная цель — сравнить эффективность rule-based правил с ML- и 
+    uplift-подходами на открытом датасете.
+  </p>
 
-Система обучается на исторических данных и сравнивает три стратегии:
-	1.	Rule-based baseline (простые бизнес-правила)
-	2.	CTR-модель (классическая бинарная классификация)
-	3.	Uplift-модель (T-learner: две раздельные модели treatment/control)
+  <h2>1. Цели прототипа</h2>
+  <ul>
+    <li>Подготовить единый датасет для моделирования поведения пользователей.</li>
+    <li>Построить baseline на основе простых rule-based правил.</li>
+    <li>Обучить CTR-модель для оценки вероятности отклика на оффер.</li>
+    <li>Обучить T-learner uplift-модель (treatment + control).</li>
+    <li>Рассчитать uplift для пользователей и ранжировать офферы.</li>
+    <li>Оценить прирост качества относительно baseline.</li>
+  </ul>
 
-⸻
+  <h2>2. Стек технологий</h2>
 
-Project Structure
+  <h3>Язык / среда</h3>
+  <ul>
+    <li>Python 3.10+</li>
+    <li>Jupyter Notebook</li>
+  </ul>
 
-aero_nbo_uplift/
-│
+  <h3>Библиотеки</h3>
+  <ul>
+    <li>pandas, numpy</li>
+    <li>scikit-learn</li>
+    <li>catboost или xgboost</li>
+    <li>matplotlib, seaborn</li>
+    <li>(опционально) causalml / econml</li>
+  </ul>
+
+  <h2>3. Структура проекта</h2>
+
+  <pre><code>aero_nbo_uplift/
 ├── data/
-│   ├── raw/                  # исходные данные (interactions_raw.csv)
-│   ├── processed/            # подготовленные датасеты
-│   └── external/             # дополнительные датасеты
+│   ├── raw/                  # исходные данные
+│   ├── processed/            # подготовленный nbo_dataset.csv
+│   └── external/
 │
 ├── notebooks/
 │   ├── 01_exploration.ipynb
 │   ├── 02_feature_engineering.ipynb
 │   ├── 03_ctr_model_training.ipynb
-│   ├── 04_uplift_models_training.ipynb
-│   └── 05_evaluation.ipynb
+│   ├── 04_uplift_training.ipynb
+│   ├── 05_evaluation.ipynb
+│   └── 06_nbo_demo.ipynb
 │
 ├── src/
-│   ├── data_prep/            # ETL, сборка nbo_dataset
-│   ├── models/               # baseline, CTR, treatment/control
-│   ├── evaluation/           # метрики, сравнение моделей
-│   └── utils/                # утилиты, конфигурации
+│   ├── data_prep/
+│   ├── models/
+│   ├── evaluation/
+│   └── utils/
 │
-├── models/                   # сохранённые модели (.pkl)
-│
+├── models/                   # сохранённые модели
 ├── reports/
-│   └── final_report.docx
-│
-├── requirements.txt
 └── README.md
+  </code></pre>
 
+  <h2>4. Описание подхода</h2>
+  <ol>
+    <li>
+      На основе исторических данных формируется датасет 
+      <code>nbo_dataset.csv</code> с RFM-признаками, контекстом показа и таргетами.
+    </li>
+    <li>
+      Строится rule-based baseline для первичного сравнения.
+    </li>
+    <li>
+      Обучается CTR-модель на treatment-записях (оффер был показан).
+    </li>
+    <li>
+      Обучаются две независимые модели:
+      <ul>
+        <li>treatment-модель: прогноз отклика при показе оффера,</li>
+        <li>control-модель: отклик в сценарии «оффер не показан».</li>
+      </ul>
+    </li>
+    <li>
+      Uplift рассчитывается как разница прогнозов treatment и control.
+    </li>
+    <li>
+      Для каждого пользователя офферы ранжируются по uplift, выбирается наилучший.
+    </li>
+  </ol>
 
-⸻
+  <h2>5. Как запустить</h2>
 
-Data
+  <ol>
+    <li>
+      Установить зависимости:
+      <pre><code>pip install -r requirements.txt</code></pre>
+    </li>
+    <li>
+      Последовательно пройти через ноутбуки в каталоге <code>notebooks/</code>:
+      <ul>
+        <li>01–02: подготовка данных</li>
+        <li>03: обучение CTR-модели</li>
+        <li>04: обучение uplift-моделей</li>
+        <li>05: сравнение baseline / CTR / uplift</li>
+        <li>06: демонстрация выбора NBO</li>
+      </ul>
+    </li>
+  </ol>
 
-Основным входным датасетом является nbo_dataset.csv, где каждая строка — взаимодействие пользователь × оффер.
+  <h2>6. Результат</h2>
+  <p>Прототип предоставляет:</p>
+  <ul>
+    <li>обученные модели отклика и uplift;</li>
+    <li>сравнительный анализ rule-based / CTR / uplift;</li>
+    <li>механизм вычисления uplift и алгоритм выбора NBO;</li>
+    <li>отчёт и визуализации, готовые для включения в аналитическую записку.</li>
+  </ul>
 
-Используемые признаки:
-	•	recency_days — дни с последней покупки
-	•	frequency_30d, frequency_90d — частотные метрики
-	•	monetary_90d — сумма затрат
-	•	avg_purchase_value — средний чек
-	•	category_encoded, channel_encoded, time_of_day — категориальные признаки
-	•	treatment — оффер показан (1) или нет (0)
-	•	outcome_click — целевая переменная
-
-⸻
-
-Models
-
-1. Rule-based baseline
-
-Простейший набор бизнес-правил для выбора оффера.
-Используется для сравнения с ML-моделями.
-
-2. CTR-модель
-
-Классическая бинарная классификация (CatBoost/XGBoost).
-Обучается на данных treatment=1 и прогнозирует:
-
-p(click | user, offer)
-
-3. Uplift-модель (T-learner)
-
-Состоит из двух ML-моделей:
-	•	model_treat: обучается на treatment-группе
-	•	model_control: обучается на control-группе
-
-Uplift рассчитывается как:
-
-uplift = p_treat - p_control
-
-Эта величина оценивает прирост отклика при показе оффера.
-
-⸻
-
-Pipeline
-	1.	Подготовка данных (RFM, кодирование категорий, объединение данных).
-	2.	Обучение rule-based baseline и фиксация его CTR.
-	3.	Обучение CTR-модели на treatment-записях.
-	4.	Обучение моделей treatment и control.
-	5.	Расчёт uplift для всех пар user × offer.
-	6.	Ранжирование офферов и выбор NBO.
-	7.	Сравнение результатов всех подходов.
-
-⸻
-
-Installation
-
-pip install -r requirements.txt
-
-
-⸻
-
-Usage
-
-Пример запуска обучения:
-
-python src/data_prep/build_dataset.py
-python src/models/ctr_model.py
-python src/models/uplift_treatment.py
-python src/models/uplift_control.py
-
-Демонстрация работы доступна в notebooks/05_evaluation.ipynb.
-
-⸻
-
-License
-
-Проект разработан в рамках исследовательской задачи NBO и не содержит производственных данных.
-
-⸻
-
-Если хочешь — сделаю такие же README для второго варианта или их объединённую версию.
+</body>
