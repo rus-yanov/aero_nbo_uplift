@@ -1,99 +1,127 @@
-"""
-rule_based.py
+# src/models/rule_based.py
 
-Простая rule-based модель для NBO:
-- вычисляет "rule_score" для каждой строки (user × offer × контекст)
-- отдаёт лучший оффер для пользователя
-- оценивает offline CTR@1 по историческим данным
-"""
+from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Tuple
 
+import numpy as np
 import pandas as pd
 
 
-def _rule_score(row: pd.Series) -> float:
-    score = 0.0
-
-    # недавняя активность
-    if row["recency_days"] <= 7:
-        score += 3.0
-    elif row["recency_days"] <= 30:
-        score += 1.5
-
-    # частота покупок
-    if row["frequency_30d"] >= 3:
-        score += 2.0
-    elif row["frequency_30d"] >= 1:
-        score += 1.0
-
-    # сумма трат за 90 дней
-    if row["monetary_90d"] >= 20000:
-        score += 2.5
-    elif row["monetary_90d"] >= 5000:
-        score += 1.0
-
-    # средний чек
-    if row["avg_purchase_value"] >= 5000:
-        score += 1.0
-
-    # время суток (one-hot признаки: 0/1)
-    if row.get("time_evening", 0) == 1:
-        score += 0.7
-    elif row.get("time_afternoon", 0) == 1:
-        score += 0.4
-    elif row.get("time_night", 0) == 1:
-        score += 0.2
-
-    # канал коммуникации (коды договоримся интерпретировать отдельно)
-    if row["channel_encoded"] == 1:      # допустим, 1 = mobile push
-        score += 1.0
-    elif row["channel_encoded"] == 2:    # допустим, 2 = in-app
-        score += 0.5
-
-    return score
+# Диапазон для эвристического CTR (минимальный/максимальный)
+MIN_CTR = 0.01
+MAX_CTR = 0.25
 
 
-def add_rule_score(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["rule_score"] = df.apply(_rule_score, axis=1)
-    return df
-
-
-def recommend_best_offer_for_user(df: pd.DataFrame, user_id) -> Optional[Tuple[str, float]]:
-    user_df = df[df["user_id"] == user_id]
-    if user_df.empty:
-        return None
-
-    user_scored = add_rule_score(user_df)
-    best_row = user_scored.sort_values("rule_score", ascending=False).iloc[0]
-    return best_row["offer_id"], float(best_row["rule_score"])
-
-
-def evaluate_rule_based_ctr_at_1(df: pd.DataFrame) -> float:
+def compute_rule_score(df: pd.DataFrame) -> pd.Series:
     """
-    Для каждого user_id выбираем оффер с max rule_score и смотрим, был ли по нему клик.
-    Работает на исторических данных с outcome_click.
+    Векторно считает rule_score для каждой строки (client × offer)
+    на основе простых бизнес-правил.
+
+    Чем выше score, тем более «обещающим» считается оффер для клиента.
     """
-    scored = add_rule_score(df)
+    s = pd.Series(0.0, index=df.index, dtype="float32")
 
-    best_per_user = (
-        scored.sort_values("rule_score", ascending=False)
-        .groupby("user_id", as_index=False)
-        .first()
-    )
+    # 1. Давность покупок (recency_days)
+    rec = df["recency_days"]
+    s += np.where(rec <= 7, 3.0,
+         np.where(rec <= 30, 2.0,
+         np.where(rec <= 90, 1.0, 0.0)))
 
-    ctr_at_1 = best_per_user["outcome_click"].mean()
-    return float(ctr_at_1)
+    # 2. Частота и денежный объём (поведение за 90 дней)
+    freq = df["frequency_90d"]
+    s += np.where(freq >= 10, 2.0,
+         np.where(freq >= 3, 1.0, 0.0))
+
+    mon = df["monetary_90d"]
+    s += np.where(mon >= 5000, 2.0,
+         np.where(mon >= 1000, 1.0, 0.0))
+
+    # 3. Скидочная активность (чувствительность к дисконту)
+    disc_cnt = df["discounts_used_90d"]
+    s += np.where(disc_cnt >= 5, 1.5,
+         np.where(disc_cnt >= 1, 0.5, 0.0))
+
+    # 4. Категориальные предпочтения
+    #    – оффер в любимой категории / top1 affinity
+    fav_match = (df["offer_category"] == df["favorite_category"])
+    top_match = (df["offer_category"] == df["category_affinity_top1"])
+    s += fav_match.astype("float32") * 2.0
+    s += top_match.astype("float32") * 1.0
+
+    # 5. Канал и мобильность
+    #    app / push считаем более вовлекающими
+    channel = df["channel"].astype(str)
+    s += np.where(channel.isin(["app", "push"]), 1.0, 0.0)
+
+    is_mobile = df["is_mobile_user"]
+    s += np.where(is_mobile == 1, 0.5, 0.0)
+
+    # 6. Email open rate (прокси вовлечённости в коммуникации)
+    open_rate = df["email_open_rate_30d"]
+    s += np.where(open_rate >= 0.5, 1.0,
+         np.where(open_rate >= 0.2, 0.5, 0.0))
+
+    # 7. Тип оффера — усиливаем скидочные офферы для budget-сегмента
+    offer_type = df["offer_type"].astype(str)
+    price_segment = df["price_segment"].astype(str)
+
+    is_discount_offer = offer_type.str.startswith("discount")
+    is_budget = (price_segment == "budget")
+
+    s += (is_discount_offer & is_budget).astype("float32") * 1.0
+
+    return s
 
 
-if __name__ == "__main__":
-    path = "data/processed/nbo_dataset.csv"
-    nbo_df = pd.read_csv(path)
+def score_to_p_click(rule_score: pd.Series) -> pd.Series:
+    """
+    Переводит rule_score в эвристическую вероятность клика.
 
-    ctr = evaluate_rule_based_ctr_at_1(nbo_df)
-    print(f"Rule-based CTR@1: {ctr:.4f}")
+    Нормализуем score в [0,1] и растягиваем в диапазон [MIN_CTR, MAX_CTR].
+    """
+    if rule_score.empty:
+        return rule_score.astype("float32")
 
-    example_user = nbo_df["user_id"].iloc[0]
-    best_offer = recommend_best_offer_for_user(nbo_df, example_user)
-    print(f"Best offer for user {example_user}: {best_offer}")
+    score_min = float(rule_score.min())
+    score_max = float(rule_score.max())
+    denom = max(score_max - score_min, 1e-6)
+
+    normalized = (rule_score - score_min) / denom  # [0,1]
+    p_click = MIN_CTR + normalized * (MAX_CTR - MIN_CTR)
+
+    return p_click.astype("float32")
+
+
+def add_rule_based_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Добавляет в датафрейм:
+      - rule_score
+      - p_click_rule
+      - expected_gain_rule = p_click_rule * offer_AOV - cost
+    Возвращает новый df (копию), не модифицируя исходный.
+    """
+    df_out = df.copy()
+
+    rule_score = compute_rule_score(df_out)
+    p_click_rule = score_to_p_click(rule_score)
+
+    df_out["rule_score"] = rule_score
+    df_out["p_click_rule"] = p_click_rule
+    df_out["expected_gain_rule"] = df_out["p_click_rule"] * df_out["offer_AOV"] - df_out["cost"]
+
+    return df_out
+
+
+def score_rule_based(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Высокоуровневая функция:
+    принимает датафрейм с фичами (ml_training_dataset или его срез),
+    добавляет rule-based скор и экономику.
+
+    Используется и в оффлайн-оценке (03_rule_based.ipynb),
+    и может быть использована в API как rule-based fallback.
+    """
+    return add_rule_based_columns(df)
