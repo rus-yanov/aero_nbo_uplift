@@ -134,7 +134,6 @@
         <li>Mean expected gain per client @k ≈ <b>+2.5 – 2.8</b></li>
       </ul>
     </li>
-
     <li>
       Чистый uplift (без cost):
       <ul>
@@ -142,7 +141,6 @@
         <li>но даёт <b>отрицательный ожидаемый доход</b>.</li>
       </ul>
     </li>
-
     <li>
       Rule-based стратегии:
       <ul>
