@@ -74,7 +74,6 @@
       </ul>
       Это приближено к реальному NBO-сценарию, где офферы уже предварительно отфильтрованы бизнес-правилами.
     </li>
-
     <li>
       Строятся rule-based стратегии:
       <ul>
@@ -82,7 +81,6 @@
         <li>rule_based_profit — эвристика с учётом AOV и cost.</li>
       </ul>
     </li>
-
     <li>
       Обучается uplift-модель (T-learner):
       <ul>
@@ -90,17 +88,14 @@
         <li><b>control-модель</b>: P(click | offer not shown), AUC = <b>0.552</b></li>
       </ul>
     </li>
-
     <li>
       Uplift рассчитывается как:
       <pre><code>uplift = P(click | treatment) − P(click | control)</code></pre>
     </li>
-
     <li>
       Profit-aware uplift:
       <pre><code>expected_gain = uplift × offer_AOV − cost</code></pre>
     </li>
-
     <li>
       Для каждого клиента выбираются top-k офферов по различным стратегиям
       и проводится offline-сравнение.
