@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-
+import numpy as np
 import pandas as pd
 
 from src.utils.config import (
@@ -15,34 +15,19 @@ from src.utils.config import (
 
 # ---------- Загрузка исходного датасета ----------
 
-
 def load_initial_dataset(path: Path | None = None) -> pd.DataFrame:
-    """
-    Загружает исходный датасет initial_dataset.csv.
-    Ожидается стандартный CSV с разделителем ','.
-    """
     csv_path = path or INITIAL_DATASET_PATH
-    df = pd.read_csv(csv_path)
-    return df
+    return pd.read_csv(csv_path)
 
 
 # ---------- Чистка ----------
 
-
 def basic_clean(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Минимальная чистка:
-    - удаление дублей
-    - удаление строк без conversion
-    - приведение conversion/treatment к int (0/1)
-    """
     df = df.drop_duplicates().copy()
 
-    # conversion — основной таргет, должен быть 0/1 и не NaN
     df = df[df["conversion"].notna()].copy()
     df["conversion"] = df["conversion"].astype(int)
 
-    # treatment — бинарный флаг воздействия
     if "treatment" in df.columns:
         df = df[df["treatment"].isin([0, 1])].copy()
         df["treatment"] = df["treatment"].astype(int)
@@ -51,14 +36,6 @@ def basic_clean(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def remove_invalid_values(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Удаляем строки с некорректными значениями:
-    - cost < 0
-    - offer_AOV <= 0
-    - monetary_90d < 0
-    - avg_order_value_lifetime <= 0
-    - revenue_14d < 0
-    """
     mask = (
         (df["cost"] >= 0)
         & (df["offer_AOV"] > 0)
@@ -70,13 +47,6 @@ def remove_invalid_values(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_time_context(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Добавляет базовые временные признаки на основе treatment_date:
-    - treatment_dow — день недели (0–6)
-    - treatment_month — месяц (1–12)
-    - treatment_hour — час (0–23)
-    - time_morning / afternoon / evening / night — one-hot время суток
-    """
     df = df.copy()
 
     dt = pd.to_datetime(df["treatment_date"], errors="coerce")
@@ -93,43 +63,56 @@ def add_time_context(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def remove_target_leaks(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Удаляет потенциальные утечки таргета.
-    Сейчас это:
-    - revenue_14d (зависит от события после оффера)
-    """
     df = df.copy()
-    leak_cols = [c for c in ["revenue_14d"] if c in df.columns]
-    if leak_cols:
-        df = df.drop(columns=leak_cols)
+    if "revenue_14d" in df.columns:
+        df = df.drop(columns=["revenue_14d"])
     return df
 
 
 def drop_service_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Удаляет служебные поля, которые не нужны для моделирования.
-    Сейчас это:
-    - other
-    """
     df = df.copy()
     df = df.drop(columns=["other"], errors="ignore")
     return df
 
 
+def add_random_control_conversions(
+    df: pd.DataFrame,
+    control_share_of_treat: float = 0.3,
+    seed: int = 42,
+) -> pd.DataFrame:
+
+    df = df.copy()
+
+    mask_treat = df["treatment"] == 1
+    p_treat = df.loc[mask_treat, "conversion"].mean()
+
+    if p_treat == 0 or pd.isna(p_treat):
+        p_treat = 0.05
+
+    p_control = float(p_treat * control_share_of_treat)
+    p_control = max(0.0001, min(p_control, 0.5))
+
+    rng = np.random.default_rng(seed)
+    mask_control = df["treatment"] == 0
+    n_control = int(mask_control.sum())
+
+    if n_control > 0:
+        df.loc[mask_control, "conversion"] = rng.binomial(1, p_control, size=n_control).astype("int8")
+
+    return df
+
+
 # ---------- Основной конвейер ----------
 
-
 def build_ml_dataset(raw_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Строит ml_training_dataset из исходного initial_dataset.
-    Здесь только общая чистка + простые контекстные признаки.
-    Более тонкий feature engineering будет в feature_engineering.py.
-    """
     df = raw_df.copy()
 
     df = basic_clean(df)
     df = remove_invalid_values(df)
     df = add_time_context(df)
+
+    df = add_random_control_conversions(df)
+
     df = remove_target_leaks(df)
     df = drop_service_columns(df)
 
@@ -137,16 +120,12 @@ def build_ml_dataset(raw_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def save_ml_dataset(df: pd.DataFrame, path: Path | None = None) -> None:
-    """
-    Сохраняет итоговый ml_training_dataset.csv.
-    """
     out_path = path or ML_DATASET_PATH
     DATA_PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, index=False)
 
 
 # ---------- CLI ----------
-
 
 def main():
     raw = load_initial_dataset()

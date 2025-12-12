@@ -38,7 +38,7 @@ BASE_NUMERIC_FEATURES: List[str] = [
     "time_night",
 ]
 
-# Категориальные признаки
+# Категориальные признаки (строки, а не числа!)
 CATEGORICAL_FEATURES: List[str] = [
     "offer_type",
     "offer_category",
@@ -50,13 +50,23 @@ CATEGORICAL_FEATURES: List[str] = [
     "price_segment",
 ]
 
-# Производные числовые признаки, которые добавим
+# Производные числовые признаки
 DERIVED_NUMERIC_FEATURES: List[str] = [
-    "discount_share",  # размер скидки относительно AOV оффера
-    "lf_check_to_offer_ratio",  # отношение lifetime среднего чека к AOV оффера
+    "discount_share",            # размер скидки относительно AOV оффера
+    "lf_check_to_offer_ratio",   # отношение lifetime среднего чека к AOV оффера
 ]
 
-ALL_NUMERIC_FEATURES: List[str] = BASE_NUMERIC_FEATURES + DERIVED_NUMERIC_FEATURES
+# Производные бинарные признаки (мы тоже считаем их числовыми)
+BINARY_DERIVED_FEATURES: List[str] = [
+    "is_favorite_category",
+    "is_top_affinity_category",
+    "is_recent_promo",
+]
+
+ALL_NUMERIC_FEATURES: List[str] = (
+    BASE_NUMERIC_FEATURES + DERIVED_NUMERIC_FEATURES + BINARY_DERIVED_FEATURES
+)
+
 FEATURE_COLS: List[str] = ALL_NUMERIC_FEATURES + CATEGORICAL_FEATURES
 
 
@@ -76,7 +86,7 @@ def load_ml_dataset(path: Path | None = None) -> pd.DataFrame:
 
 def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Добавляет простые производные признаки:
+    Добавляет производные признаки:
     - discount_share
     - lf_check_to_offer_ratio
     - is_favorite_category
@@ -85,30 +95,24 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    # избегаем деления на ноль
+    # избегаем деления на ноль для AOV
     df["discount_share"] = df["cost"] / df["offer_AOV"].replace(0, pd.NA)
     df["discount_share"] = df["discount_share"].fillna(0.0)
 
     df["lf_check_to_offer_ratio"] = (
-            df["avg_order_value_lifetime"] / df["offer_AOV"].replace(0, pd.NA)
+        df["avg_order_value_lifetime"] / df["offer_AOV"].replace(0, pd.NA)
     )
     df["lf_check_to_offer_ratio"] = df["lf_check_to_offer_ratio"].fillna(1.0)
 
-    df["is_favorite_category"] = (df["offer_category"] == df["favorite_category"]).astype("int8")
+    df["is_favorite_category"] = (
+        df["offer_category"] == df["favorite_category"]
+    ).astype("int8")
+
     df["is_top_affinity_category"] = (
-            df["offer_category"] == df["category_affinity_top1"]
+        df["offer_category"] == df["category_affinity_top1"]
     ).astype("int8")
 
     df["is_recent_promo"] = (df["days_since_last_promo"] <= 30).astype("int8")
-
-    # добавляем бинарные derived-признаки в список числовых
-    extra_binary_cols = ["is_favorite_category", "is_top_affinity_category", "is_recent_promo"]
-    for col in extra_binary_cols:
-        if col not in ALL_NUMERIC_FEATURES:
-            ALL_NUMERIC_FEATURES.append(col)
-
-    global FEATURE_COLS
-    FEATURE_COLS = ALL_NUMERIC_FEATURES + CATEGORICAL_FEATURES
 
     return df
 
@@ -117,12 +121,12 @@ def ensure_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     """
     Приводит типы:
     - числовые фичи → float32
-    - бинарные → int8
-    - категориальные → category
+    - бинарные фичи → int8
+    - категориальные фичи → string (object), чтобы CatBoost видел их как категориальные
     """
     df = df.copy()
 
-    # Бинарные колонки
+    # Бинарные колонки (включая производные)
     binary_cols = [
         "treatment",
         "conversion",
@@ -136,19 +140,20 @@ def ensure_dtypes(df: pd.DataFrame) -> pd.DataFrame:
         "is_top_affinity_category",
         "is_recent_promo",
     ]
+
     for col in binary_cols:
         if col in df.columns:
             df[col] = df[col].astype("int8")
 
-    # Числовые фичи
+    # Числовые фичи (все, кроме явно бинарных)
     for col in ALL_NUMERIC_FEATURES:
-        if col in df.columns:
+        if col in df.columns and col not in binary_cols:
             df[col] = df[col].astype("float32")
 
-    # Категориальные фичи
+    # Категориальные фичи — приводим к строкам
     for col in CATEGORICAL_FEATURES:
         if col in df.columns:
-            df[col] = df[col].astype("category")
+            df[col] = df[col].astype("string")
 
     return df
 
@@ -157,7 +162,7 @@ def ensure_dtypes(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def prepare_features(
-        df: pd.DataFrame,
+    df: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, Dict[str, List[str]]]:
     """
     Высокоуровневый интерфейс:

@@ -2,85 +2,39 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Dict, Tuple
 import json
+from pathlib import Path
+from typing import Any, Dict, Tuple
 
+import joblib
 import numpy as np
-import pandas as pd
-from catboost import CatBoostClassifier
+from catboost import CatBoostClassifier, CatBoostError
 
-from src.data_prep.feature_engineering import prepare_features
-from src.utils.config import (
-    UPLIFT_CONTROL_MODEL_PATH,
-    UPLIFT_CONTROL_META_PATH,
-    MODELS_DIR,
-)
-
-
-DEFAULT_CONTROL_PARAMS: Dict = {
-    "loss_function": "Logloss",
-    "eval_metric": "AUC",
-    "depth": 6,
-    "learning_rate": 0.05,
-    "l2_leaf_reg": 3.0,
-    "iterations": 500,
-    "random_seed": 43,  # можно другой сид
-    "verbose": False,
-}
-
-
-def _ensure_models_dir():
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def train_control_model(
-    df_ml: pd.DataFrame,
-    params: Dict | None = None,
-) -> Tuple[CatBoostClassifier, Dict]:
-    """
-    Обучает модель p(click | treatment=0) на срезе treatment == 0.
-    """
-    df_c = df_ml[df_ml["treatment"] == 0].copy()
-    if df_c.empty:
-        raise ValueError("Нет строк с treatment == 0 для обучения control-модели")
-
-    X, y, ids, meta = prepare_features(df_c)
-
-    cat_features = [
-        col for col in meta["categorical_features"]
-        if col in X.columns
-    ]
-
-    model_params = DEFAULT_CONTROL_PARAMS.copy()
-    if params:
-        model_params.update(params)
-
-    model = CatBoostClassifier(**model_params)
-    model.fit(
-        X,
-        y,
-        cat_features=cat_features,
-    )
-
-    return model, meta
+from src.utils.config import UPLIFT_CONTROL_MODEL_PATH, UPLIFT_CONTROL_META_PATH
 
 
 def save_control_model(
-    model: CatBoostClassifier,
+    model: Any,
     meta: Dict,
     model_path: Path | None = None,
     meta_path: Path | None = None,
 ) -> None:
     """
-    Сохраняет control-модель и мета-информацию о фичах.
-    """
-    _ensure_models_dir()
+    Сохраняет control-модель и метаинформацию.
 
+    Поддерживает:
+      - CatBoostClassifier (через .save_model)
+      - любые sklearn-модели (через joblib.dump)
+    """
     m_path = model_path or UPLIFT_CONTROL_MODEL_PATH
     meta_p = meta_path or UPLIFT_CONTROL_META_PATH
 
-    model.save_model(str(m_path))
+    m_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if isinstance(model, CatBoostClassifier):
+        model.save_model(str(m_path))
+    else:
+        joblib.dump(model, m_path)
 
     with open(meta_p, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
@@ -89,32 +43,54 @@ def save_control_model(
 def load_control_model(
     model_path: Path | None = None,
     meta_path: Path | None = None,
-) -> Tuple[CatBoostClassifier, Dict]:
+) -> Tuple[Any, Dict]:
     """
-    Загружает control-модель и мета-информацию.
+    Загружает control-модель и метаинформацию.
+
+    Пытается:
+      1) загрузить как CatBoost (load_model),
+      2) при ошибке — как joblib (sklearn/прочие модели).
     """
     m_path = model_path or UPLIFT_CONTROL_MODEL_PATH
     meta_p = meta_path or UPLIFT_CONTROL_META_PATH
 
-    model = CatBoostClassifier()
-    model.load_model(str(m_path))
+    if not m_path.exists():
+        raise FileNotFoundError(f"Control model file not found: {m_path}")
+    if not meta_p.exists():
+        raise FileNotFoundError(f"Control meta file not found: {meta_p}")
+
+    try:
+        cb = CatBoostClassifier()
+        cb.load_model(str(m_path))
+        model: Any = cb
+    except CatBoostError:
+        model = joblib.load(m_path)
 
     with open(meta_p, "r", encoding="utf-8") as f:
-        meta = json.load(f)
+        meta: Dict = json.load(f)
 
     return model, meta
 
 
-def predict_control_proba(
-    model: CatBoostClassifier,
-    X: pd.DataFrame,
-    meta: Dict,
-) -> np.ndarray:
+def predict_control_proba(model: Any, X, meta: Dict) -> np.ndarray:
     """
-    Возвращает вектор p_control = P(click | treatment=0).
-    """
-    feature_cols = meta["feature_cols"]
-    X = X[feature_cols]
+    Возвращает p_control = P(conversion | treatment=0).
 
-    proba = model.predict_proba(X)[:, 1]
-    return proba
+    - Выравнивает порядок/набор колонок по meta["feature_cols"] (как в treatment).
+    - Для моделей с predict_proba.
+    - Если predict_proba возвращает только один столбец (DummyClassifier/один класс),
+      считаем p_control = 0 для всех объектов.
+    """
+    feature_cols = meta.get("feature_cols")
+    if feature_cols is not None:
+        X = X[feature_cols]
+
+    if not hasattr(model, "predict_proba"):
+        raise TypeError(f"Model of type {type(model)} has no predict_proba")
+
+    proba = model.predict_proba(X)
+
+    if proba.ndim == 2 and proba.shape[1] == 1:
+        return np.zeros(X.shape[0], dtype=float)
+
+    return proba[:, 1].astype(float)
