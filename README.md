@@ -49,8 +49,7 @@
 │   ├── 02_feature_engineering.ipynb
 │   ├── 03_rule_based_baseline.ipynb
 │   ├── 04_uplift_training.ipynb
-│   ├── 05_uplift_vs_rule_based.ipynb
-│   └── 06_nbo_demo.ipynb
+│   └── 05_uplift_vs_rule_based.ipynb
 │
 ├── src/
 │   ├── data_prep/            # очистка и feature engineering
